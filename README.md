@@ -22,10 +22,27 @@ waiting, and lets you approve or deny right from the device.
 
 ## Hardware
 
-The firmware targets ESP32 with the Arduino framework. As written, it
-depends on the M5StickCPlus library for its display, IMU, and button
-drivers—so you'll need that board, or a fork that swaps those drivers for
-your own pin layout.
+This fork targets the **M5Stack CoreS3** (ESP32-S3, 320×240 capacitive
+touchscreen, AXP2101 PMIC, BMI270 IMU) using the Arduino framework and
+[M5Unified](https://github.com/m5stack/M5Unified) for its display, touch,
+IMU, speaker, RTC and power drivers. The original M5StickC Plus UI was
+redesigned for a larger landscape touchscreen that has no front buttons:
+
+```
+┌──────────────────────── status bar ─────────────────────────┐
+│ owner's pet                          ● BT   12:34   87% [■] │
+├──────────────────┬──────────────────────────────────────────┤
+│                  │  chat / pet stats / info pages           │
+│    pet panel     │  (drag to scroll, tap or swipe to page)  │
+│                  │                                          │
+├──── chat ────────┴── pet ────────── info ─────────── menu ──┤
+└─────────────────────────────────────────────────────────────┘
+```
+
+The pet always stays on the left. The right panel shows the transcript,
+stats or info pages, and the tab bar switches between them. When a
+permission prompt arrives, the tab bar is replaced by two large **DENY**
+and **APPROVE** buttons.
 
 ## Flashing
 
@@ -43,8 +60,11 @@ If you're starting from a previously-flashed device, wipe it first:
 pio run -t erase && pio run -t upload
 ```
 
-Once running, you can also wipe everything from the device itself: **hold A
-→ settings → reset → factory reset → tap twice**.
+Once running, you can also wipe everything from the device itself: **menu →
+settings → reset → factory reset → tap twice**.
+
+If the upload can't find the port, hold the CoreS3's reset button for ~3s
+until the green LED lights to enter download mode, then retry.
 
 ## Pairing
 
@@ -61,25 +81,36 @@ first connect; grant it.
 
 Once paired, the bridge auto-reconnects whenever both sides are awake.
 
-If discovery isn't finding the stick:
+If discovery isn't finding the device:
 
-- Make sure it's awake (any button press)
-- Check the stick's settings menu → bluetooth is on
+- Make sure it's awake (touch the screen)
+- Check menu → settings → bluetooth is on
 
 ## Controls
 
-|                         | Normal               | Pet         | Info        | Approval    |
-| ----------------------- | -------------------- | ----------- | ----------- | ----------- |
-| **A** (front)           | next screen          | next screen | next screen | **approve** |
-| **B** (right)           | scroll transcript    | next page   | next page   | **deny**    |
-| **Hold A**              | menu                 | menu        | menu        | menu        |
-| **Power** (left, short) | toggle screen off    |             |             |             |
-| **Power** (left, ~6s)   | hard power off       |             |             |             |
-| **Shake**               | dizzy                |             |             | —           |
-| **Face-down**           | nap (energy refills) |             |             |             |
+| Input                        | Does                                               |
+| ---------------------------- | -------------------------------------------------- |
+| **Tab bar**                  | chat · pet · info · menu (tap again = next page)   |
+| **Drag** the chat panel      | scroll transcript history                          |
+| **Tap** the chat panel       | jump back to the newest line                       |
+| **Tap / swipe** pet or info  | next / previous page                               |
+| **Tap the pet**              | pet it (hearts)                                    |
+| **DENY / APPROVE** buttons   | answer a permission prompt                         |
+| **Power button** (short)     | toggle screen off                                  |
+| **Power button** (long hold) | hard power off                                     |
+| **Shake**                    | dizzy                                              |
+| **Face-down**                | nap (energy refills)                               |
 
-The screen auto-powers-off after 30s of no interaction (kept on while an
-approval prompt is up). Any button press wakes it.
+Approval prompts are modal. Touches in the first 0.6s are ignored, and a
+decision only counts if you press and release on the same button, so
+picking the device up won't approve anything by accident.
+
+On battery, the screen turns off after 30s without interaction. Change
+this with **settings → screen off** (30s / 2 min / 10 min / never). It
+stays on while a prompt is up, and never turns off on USB power, where it
+acts as a desk clock. Touch the screen to wake it; that first touch only wakes
+the screen. While an approval is pending, the screen border flashes (turn
+this off with settings → alert blink).
 
 ## ASCII pets
 
@@ -122,7 +153,7 @@ State values can be a single filename or an array. Arrays rotate: each
 loop-end advances to the next GIF, useful for an idle activity carousel so
 the home screen doesn't loop one clip forever.
 
-GIFs are 96px wide; height up to ~140px stays on a 135×240 portrait screen.
+GIFs are 96px wide; height up to ~180px fits the 150×180 pet panel.
 Crop tight to the character — transparent margins waste screen and shrink
 the sprite. `tools/prep_character.py` handles the resize: feed it source
 GIFs at any sizes and it produces a 96px-wide set where the character is the
@@ -144,10 +175,10 @@ If you're iterating on a character and would rather skip the BLE round-trip,
 | `sleep`     | bridge not connected        | eyes closed, slow breathing |
 | `idle`      | connected, nothing urgent   | blinking, looking around    |
 | `busy`      | sessions actively running   | sweating, working           |
-| `attention` | approval pending            | alert, **LED blinks**       |
+| `attention` | approval pending            | alert, **border flashes**   |
 | `celebrate` | level up (every 50K tokens) | confetti, bouncing          |
-| `dizzy`     | you shook the stick         | spiral eyes, wobbling       |
-| `heart`     | approved in under 5s        | floating hearts             |
+| `dizzy`     | you shook the device        | spiral eyes, wobbling       |
+| `heart`     | approved in <5s, or petted  | floating hearts             |
 
 ## Project layout
 
