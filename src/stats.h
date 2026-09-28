@@ -183,9 +183,10 @@ struct Settings {
   bool led;
   bool hud;
   bool flip;     // rotate the screen 180° (USB cable on the other side)
+  uint8_t screenOff;  // battery auto-off: 0=30s 1=2m 2=10m 3=never
 };
 
-static Settings _settings = { true, true, false, true, true, false };
+static Settings _settings = { true, true, false, true, true, false, 0 };
 
 inline void settingsLoad() {
   _prefs.begin("buddy", true);
@@ -195,6 +196,8 @@ inline void settingsLoad() {
   _settings.led   = _prefs.getBool("s_led", true);
   _settings.hud      = _prefs.getBool("s_hud", true);
   _settings.flip     = _prefs.getBool("s_flip", false);
+  _settings.screenOff = _prefs.getUChar("s_off", 0);
+  if (_settings.screenOff > 3) _settings.screenOff = 0;
   _prefs.end();
 }
 
@@ -206,6 +209,7 @@ inline void settingsSave() {
   _prefs.putBool("s_led", _settings.led);
   _prefs.putBool("s_hud", _settings.hud);
   _prefs.putBool("s_flip", _settings.flip);
+  _prefs.putUChar("s_off", _settings.screenOff);
   _prefs.end();
 }
 

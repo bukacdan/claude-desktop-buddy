@@ -113,7 +113,9 @@ static void nextPet() {
   if (buddyMode) buddyInvalidate();
 }
 uint32_t wakeTransitionUntil = 0;
-const uint32_t SCREEN_OFF_MS = 30000;
+// Battery auto-off choices (settings → screen off). On USB it never sleeps.
+static const uint32_t SCREEN_OFF_MS[] = { 30000, 120000, 600000, 0 };
+static const char* const SCREEN_OFF_LBL[] = { "30s", "2 min", "10 min", "never" };
 
 bool     napping = false;
 uint32_t napStartMs = 0;
@@ -184,7 +186,7 @@ static void ledSet(int8_t s) {
 const char* menuItems[] = { "settings", "help", "about", "demo", "turn off" };
 const uint8_t MENU_N = 5;
 
-const char* settingsItems[] = { "brightness", "sound", "bluetooth", "alert blink",
+const char* settingsItems[] = { "brightness", "sound", "screen off", "alert blink",
                                 "transcript", "flip screen", "pet", "reset" };
 const uint8_t SETTINGS_N = 8;
 
@@ -201,13 +203,10 @@ static void applySetting(uint8_t idx) {
       applyBrightness();
       return;
     case 1: s.sound = !s.sound; break;
-    case 2:
-      // BT toggle is a stored preference only — BLE stays live. Turning
-      // BLE off cleanly would require tearing down the BLE stack which
-      // the Arduino BLE library doesn't do reliably. If we need a
-      // hard-off someday, stop advertising via BLEDevice::getAdvertising().
-      s.bt = !s.bt;
-      break;
+    // "bluetooth" used to live here, but it was a stored preference only —
+    // BLE always stays up (the Arduino BLE stack can't be torn down
+    // reliably), so the tile went to something that actually does work.
+    case 2: s.screenOff = (s.screenOff + 1) % 4; break;
     case 3: s.led = !s.led; break;
     case 4: s.hud = !s.hud; break;
     case 5: s.flip = !s.flip; applyRotation(); break;
@@ -365,13 +364,16 @@ static void drawSettings() {
   const Palette& p = characterPalette();
   drawOverlayHeader("settings", "back", p.body);
   Settings& s = settings();
-  bool vals[] = { s.sound, s.bt, s.led, s.hud, s.flip };
+  bool vals[] = { s.sound, false, s.led, s.hud, s.flip };
   char buf[12];
   for (uint8_t i = 0; i < SETTINGS_N; i++) {
     const char* v = buf;
     uint16_t col = p.text;
     if (i == 0) {
       snprintf(buf, sizeof(buf), "%u/4", brightLevel);
+    } else if (i == 2) {
+      v = SCREEN_OFF_LBL[s.screenOff];
+      col = s.screenOff == 3 ? C_GREEN : p.text;
     } else if (i >= 1 && i <= 5) {
       v = vals[i-1] ? "on" : "off";
       col = vals[i-1] ? C_GREEN : p.textDim;
@@ -859,7 +861,8 @@ static void drawPetHowTo(const Palette& p, int y) {
   ln(p.body,    "LOVE");
   ln(p.textDim, " tap the pet to pet it"); gap();
 
-  ln(p.textDim, "idle 30s on battery = off");
+  ln(p.textDim, "on battery: screen sleeps");
+  ln(p.textDim, " (settings > screen off)");
   ln(p.textDim, "touch anywhere = wake");
 }
 
@@ -962,6 +965,7 @@ static void drawInfo(const Palette& p) {
     ln("  heap     %uKB", ESP.getFreeHeap() / 1024);
     ln("  psram    %uKB", ESP.getFreePsram() / 1024);
     ln("  bright   %u/4", brightLevel);
+    ln("  auto-off %s", _onUsb ? "never (usb)" : SCREEN_OFF_LBL[settings().screenOff]);
     ln("  temp     %dC", (int)temperatureRead());
 
   } else if (infoPage == 4) {
@@ -1401,7 +1405,8 @@ void loop() {
   // so now - lastInteractMs underflows when a finger is held → flicker.
   // No auto-off on USB power — the desk clock wants to stay visible.
   if (!screenOff && !inPrompt && !_onUsb
-      && millis() - lastInteractMs > SCREEN_OFF_MS) {
+      && SCREEN_OFF_MS[settings().screenOff]
+      && millis() - lastInteractMs > SCREEN_OFF_MS[settings().screenOff]) {
     screenSleep();
   }
 
