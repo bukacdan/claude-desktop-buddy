@@ -119,7 +119,10 @@ static void gifDrawCb(GIFDRAW* d) {
 // --- Public -------------------------------------------------------------
 
 bool characterInit(const char* name) {
-  if (!LittleFS.begin(false)) {
+  // formatOnFail: a fresh CoreS3 ships with the factory demo's data in the
+  // spiffs partition, which LittleFS can't mount. Formatting only happens
+  // when the mount fails, so an installed character is never touched.
+  if (!LittleFS.begin(true)) {
     // begin() fails if already mounted — that's fine on reload
     if (!LittleFS.open("/")) {
       Serial.println("[char] LittleFS mount failed");
