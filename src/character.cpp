@@ -1,10 +1,11 @@
 #include "character.h"
-#include <M5StickCPlus.h>
+#include <M5Unified.h>
 #include <LittleFS.h>
 #include <AnimatedGIF.h>
 #include <ArduinoJson.h>
 
-extern TFT_eSprite spr;
+// Renders into the dedicated pet canvas (left panel); see main.cpp.
+extern M5Canvas petSpr;
 
 static const char* STATE_NAMES[] = {
   "sleep", "idle", "busy", "attention", "celebrate", "dizzy", "heart"
@@ -37,21 +38,12 @@ static uint8_t curState = 0xFF;
 static AnimatedGIF gif;
 static File        gifFile;
 static int         gifX = 0, gifY = 0, gifW = 0, gifH = 0;
-// Peek mode pins the GIF bottom to the info-panel top (y=70) so the pet
-// sits on the panel edge regardless of canvas height. Home mode centers
-// in the upper 140px. No padding assumed in the source art.
-static const int   PEEK_TOP = 70;
-static bool        peekMode = false;
-// Draw target — defaults to the sprite; characterRenderTo() retargets to
-// M5.Lcd for the landscape clock (both inherit TFT_eSPI).
-static TFT_eSPI*   _tgt = &spr;
-// Peek mode renders at half scale (2:1 nearest-neighbor in gifDrawCb) so
-// the whole pet fits the 70px window instead of cropping the top.
+// Center the GIF in the pet canvas. Source art is 96px wide and up to
+// ~140px tall, so it always fits the 150×180 panel at 1:1.
 static void gifPlace() {
-  int outW = peekMode ? gifW / 2 : gifW;
-  int outH = peekMode ? gifH / 2 : gifH;
-  gifX = (spr.width() - outW) / 2;
-  gifY = peekMode ? (PEEK_TOP - outH) / 2 : (140 - outH) / 2;
+  gifX = (petSpr.width() - gifW) / 2;
+  gifY = (petSpr.height() - gifH) / 2;
+  if (gifY < 0) gifY = 0;
 }
 static uint32_t    nextFrameAt = 0;
 static uint32_t    animPauseUntil = 0;
@@ -108,29 +100,18 @@ static void gifDrawCb(GIFDRAW* d) {
   // GIFs are unoptimized full-frame (gifsicle --unoptimize --lossy) so
   // transparent always means background — no disposal/delta handling.
   // The -O2/-O3 sub-rect + delta-transparency path was tried and reverted:
-  // disposal semantics are encoder-dependent and don't compose with the
-  // 2:1 peek downscale's sample alignment.
+  // disposal semantics are encoder-dependent.
   auto put = [&](int x, int y, uint8_t idx) {
-    _tgt->drawPixel(x, y, (hasT && idx == t) ? pal.bg : pal16[idx]);
+    petSpr.drawPixel(x, y, (uint16_t)((hasT && idx == t) ? pal.bg : pal16[idx]));
   };
 
-  if (peekMode) {
-    if (srcY & 1) return;
-    int y = gifY + (srcY >> 1);
-    if (y < 0 || y >= PEEK_TOP) return;
-    int x0 = gifX + (d->iX >> 1);
-    int w  = d->iWidth >> 1;
-    for (int i = 0; i < w; i++) put(x0 + i, y, src[i << 1]);
-    return;
-  }
-
   int y = gifY + srcY;
-  if (y < 0 || y >= spr.height()) return;
+  if (y < 0 || y >= petSpr.height()) return;
   int x0 = gifX + d->iX;
   int w  = d->iWidth;
   if (w > 256) w = 256;
   if (x0 < 0) { src -= x0; w += x0; x0 = 0; }
-  if (x0 + w > spr.width()) w = spr.width() - x0;
+  if (x0 + w > petSpr.width()) w = petSpr.width() - x0;
   if (w <= 0) return;
   for (int i = 0; i < w; i++) put(x0 + i, y, src[i]);
 }
@@ -247,30 +228,6 @@ bool characterInit(const char* name) {
 bool characterLoaded() { return loaded; }
 const Palette& characterPalette() { return pal; }
 
-// One-shot half-scale render to an arbitrary surface (M5.Lcd for the
-// landscape clock). Caller owns clearing. Advances frame timing so
-// animation runs even when characterTick() is bypassed.
-void characterRenderTo(TFT_eSPI* tgt, int cx, int cy) {
-  if (!gifOpen) return;   // caller opens via characterSetState(activeState)
-  TFT_eSPI* prevT = _tgt; bool prevP = peekMode; int px = gifX, py = gifY;
-  _tgt = tgt; peekMode = true;
-  gifX = cx - gifW / 4;
-  gifY = cy - gifH / 4;
-  uint32_t now = millis();
-  if (now >= nextFrameAt) {
-    int delayMs = 0;
-    if (!gif.playFrame(false, &delayMs)) { gif.reset(); gif.playFrame(false, &delayMs); }
-    nextFrameAt = now + (delayMs > 0 ? delayMs : 100);
-  }
-  _tgt = prevT; peekMode = prevP; gifX = px; gifY = py;
-}
-
-void characterSetPeek(bool peek) {
-  if (peekMode == peek) return;
-  peekMode = peek;
-  characterInvalidate();
-}
-
 void characterClose() {
   if (gifOpen) { gif.close(); gifOpen = false; }
   loaded = false;
@@ -281,7 +238,7 @@ void characterClose() {
 void characterInvalidate() {
   if (!loaded) return;
   if (textMode) {
-    spr.fillSprite(pal.bg);
+    petSpr.fillSprite(pal.bg);
     uint8_t s = curState; curState = 0xFF;
     characterSetState(s);
     return;
@@ -299,7 +256,7 @@ void characterSetState(uint8_t s) {
     curState = s;
     textFrame = 0;
     textNext = 0;
-    spr.fillSprite(pal.bg);
+    petSpr.fillSprite(pal.bg);
     return;
   }
 
@@ -320,7 +277,7 @@ void characterSetState(uint8_t s) {
     gifW = gif.getCanvasWidth();
     gifH = gif.getCanvasHeight();
     gifPlace();
-    spr.fillSprite(pal.bg);   // bias upward, leave room for HUD
+    petSpr.fillSprite(pal.bg);
     nextFrameAt = 0;
     variantStartedMs = millis();
     Serial.printf("[char] %s: %dx%d @ (%d,%d) heap=%u\n",
@@ -340,18 +297,16 @@ void characterTick() {
     if (now < textNext) return;
     textNext = now + ts.delayMs;
 
-    // Clear a band around the text, not the whole sprite — keeps overlays
-    // like the approval panel and the HUD untouched.
-    int cy = peekMode ? 35 : 60;
-    spr.fillRect(0, cy - 14, spr.width(), 28, pal.bg);
+    int cy = petSpr.height() / 2;
+    petSpr.fillRect(0, cy - 14, petSpr.width(), 28, pal.bg);
 
     const char* line = ts.frames[textFrame];
     int len = strlen(line);
     int tw = len * 12;                                    // size-2 glyph width
-    spr.setTextColor(pal.body, pal.bg);
-    spr.setTextSize(2);
-    spr.setCursor((spr.width() - tw) / 2, cy - 8);
-    spr.print(line);
+    petSpr.setTextColor(pal.body, pal.bg);
+    petSpr.setTextSize(2);
+    petSpr.setCursor((petSpr.width() - tw) / 2, cy - 8);
+    petSpr.print(line);
 
     textFrame = (textFrame + 1) % ts.nFrames;
     return;

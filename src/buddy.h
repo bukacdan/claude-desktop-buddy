@@ -8,18 +8,15 @@
 void buddyInit();
 void buddyTick(uint8_t personaState);
 void buddyInvalidate();
-class TFT_eSPI;
-void buddyRenderTo(TFT_eSPI* tgt, uint8_t personaState);
 void buddySetSpecies(const char* name);
 void buddySetSpeciesIdx(uint8_t idx);
 void buddyNextSpecies();
-void buddySetPeek(bool peek);
 uint8_t buddySpeciesIdx();
 uint8_t buddySpeciesCount();
 const char* buddySpeciesName();
 
 // Per-species state function: takes the global tickCount and renders
-// the buddy + any overlays for the current state into the shared sprite.
+// the buddy + any overlays for the current state into the pet canvas.
 typedef void (*StateFn)(uint32_t t);
 
 struct Species {
