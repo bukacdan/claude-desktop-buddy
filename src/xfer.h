@@ -96,6 +96,12 @@ inline bool xferCommand(JsonDocument& doc) {
     return true;
   }
 
+  if (strcmp(cmd, "dbg") == 0) {
+    extern void debugDump();
+    debugDump();
+    return true;
+  }
+
   if (strcmp(cmd, "unpair") == 0) {
     bleClearBonds();
     _xAck("unpair", true);

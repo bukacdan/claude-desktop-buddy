@@ -1114,10 +1114,15 @@ static void onTap(int bx, int by, int x, int y) {
   }
 }
 
+static uint32_t _dbgTouches = 0;     // touch-detail frames seen
+static uint8_t  _dbgLastState = 0;   // last touch_state_t
+static int16_t  _dbgLastX = -1, _dbgLastY = -1;
+
 static void handleTouch() {
   static int16_t dragAccum = 0;
   if (!M5.Touch.getCount()) return;
   const auto& t = M5.Touch.getDetail(0);
+  _dbgTouches++; _dbgLastState = t.state; _dbgLastX = t.x; _dbgLastY = t.y;
 
   bool touching = t.isPressed();
   if (touching) {
@@ -1153,6 +1158,30 @@ static void handleTouch() {
   if (t.state == m5::touch_state_t::touch_end || t.state == m5::touch_state_t::hold_end) {
     onTap(t.base_x, t.base_y, t.x, t.y);
   }
+}
+
+// {"cmd":"dbg"} over USB serial or BLE → one JSON line of UI internals.
+static int8_t   faceDownFrames = 0;
+static uint32_t _dbgFrames = 0;
+void debugDump() {
+  float ax = 0, ay = 0, az = 0;
+  bool imu = M5.Imu.getAccel(&ax, &ay, &az);
+  char b[360];
+  int n = snprintf(b, sizeof(b),
+    "{\"ack\":\"dbg\",\"ok\":true,\"n\":0,\"data\":{"
+    "\"up\":%lu,\"frames\":%lu,\"nap\":%d,\"fd\":%d,\"off\":%d,\"dim\":%d,"
+    "\"swallow\":%d,\"touches\":%lu,\"tstate\":%u,\"tx\":%d,\"ty\":%d,\"tcount\":%u,"
+    "\"imu\":%d,\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
+    "\"mode\":%u,\"menu\":%d,\"set\":%d,\"reset\":%d,\"prompt\":\"%.20s\",\"sent\":%d,"
+    "\"pk\":%lu,\"state\":\"%s\",\"idleMs\":%lu}}\n",
+    (unsigned long)(millis() / 1000), (unsigned long)_dbgFrames, napping, faceDownFrames,
+    screenOff, dimmed, swallowTouch, (unsigned long)_dbgTouches, _dbgLastState,
+    _dbgLastX, _dbgLastY, M5.Touch.getCount(), imu, ax, ay, az,
+    displayMode, menuOpen, settingsOpen, resetOpen, tama.promptId, responseSent,
+    (unsigned long)blePasskey(), stateNames[activeState],
+    (unsigned long)(millis() - lastInteractMs));
+  Serial.write(b, n);
+  bleWrite((const uint8_t*)b, n);
 }
 
 void setup() {
@@ -1309,6 +1338,7 @@ void loop() {
   static uint32_t lastFrame = 0;
   if (!napping && !screenOff && now - lastFrame >= 33) {
     lastFrame = now;
+    _dbgFrames++;
 
     if (buddyMode) {
       buddyTick(activeState);
@@ -1349,7 +1379,6 @@ void loop() {
   // Skipped during approval — you're holding it to read, not sleeping it.
   // Exit needs sustained not-down so IMU noise at the threshold doesn't
   // bounce brightness between 8 and full every few frames.
-  static int8_t faceDownFrames = 0;
   if (!inPrompt) {
     bool down = isFaceDown();
     if (down)       { if (faceDownFrames < 20) faceDownFrames++; }
