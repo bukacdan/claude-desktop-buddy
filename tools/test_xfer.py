@@ -6,8 +6,8 @@ back over serial, watch the acks, verify it reloads.
 import sys, json, base64, time, glob, os, serial
 
 CHUNK = 256
-PORT = (glob.glob('/dev/cu.usbserial-*') + [None])[0]
-if not PORT: sys.exit("no stick found")
+PORT = ((glob.glob('/dev/cu.usbmodem*') + glob.glob('/dev/cu.usbserial-*')) + [None])[0]
+if not PORT: sys.exit("no device found")
 
 s = serial.Serial(PORT, 115200, timeout=2)
 s.dtr = True; s.rts = False

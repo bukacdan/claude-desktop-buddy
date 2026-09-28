@@ -2,8 +2,8 @@
 """Prove the Stick reacts to serial JSON. Cycles states every 3s."""
 import json, time, serial, glob, sys
 
-ports = glob.glob('/dev/cu.usbserial-*')
-if not ports: sys.exit("no stick found")
+ports = (glob.glob('/dev/cu.usbmodem*') + glob.glob('/dev/cu.usbserial-*'))
+if not ports: sys.exit("no device found")
 s = serial.Serial(ports[0], 115200)
 print(f"writing to {ports[0]} — watch the Stick\n")
 
